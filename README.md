@@ -61,7 +61,7 @@ module "secret" {
         AWS = "arn:aws:iam::111122223333:role/my-cross-account-role"
       }
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = "arn:aws:secretsmanager:ap-northeast-2:111122223333:secret:my-api-key-*"
+      Resource = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:my-api-key-*"
     }
   ]
 }
@@ -311,7 +311,7 @@ This chapter describes Input/Output variables used in tfmodule-aws-secrets-manag
       AWS = "arn:aws:iam::111122223333:role/my-role"
     }
     Action   = ["secretsmanager:GetSecretValue"]
-    Resource = "arn:aws:secretsmanager:ap-northeast-2:111122223333:secret:my-api-key-*"
+    Resource = "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:my-api-key-*"
   }
 ]</pre></td>
     </tr>

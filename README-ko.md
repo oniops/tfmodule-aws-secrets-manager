@@ -139,6 +139,38 @@ module "secret" {
 
 <br>
 
+### 예제 6 : Write-only 시크릿 (Terraform state에 저장되지 않음)
+
+Write-only 인자 `secret_string_wo`를 사용해 시크릿 값을 저장하는 방법을 설명합니다. 값은 AWS Secrets Manager로 전달되지만 **Terraform plan 및 state 파일에는 저장되지 않으므로**, state가 노출되더라도 시크릿 값은 유출되지 않습니다. Terraform `>= 1.11`이 필요합니다.
+
+```hcl
+# Ephemeral 변수: 값이 plan/state에 기록되지 않습니다.
+# 환경 변수로 전달합니다. 예) export TF_VAR_db_password="..."
+variable "db_password" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+}
+
+module "secret" {
+  source  = "git::https://github.com/oniops/tfmodule-aws-secrets-manager.git?ref=v1.0.0"
+  context = module.ctx.context
+  name    = "my-db-password"
+
+  secret_string_wo = jsonencode({
+    username = "admin"
+    password = var.db_password
+  })
+  # Terraform은 write-only 값의 변경을 감지할 수 없습니다.
+  # 시크릿 값을 변경할 때마다 이 번호를 증가시키세요.
+  secret_string_wo_version = 1
+}
+```
+
+> **Note:** `secret_string_wo`는 `secret_string` 또는 `secret_binary`와 함께 사용할 수 없으며, 반드시 `secret_string_wo_version`과 함께 설정해야 합니다. 값을 변경하려면 입력값을 바꾸고 `secret_string_wo_version`을 증가시키세요(예: `1` → `2`). Write-only 시크릿의 경우 `secret_string` 출력값은 `null`입니다. 자세한 내용은 부록의 [Write-only 시크릿 값](#write-only-시크릿-값-secret_string_wo)을 참고하세요.
+
+<br>
+
 > **Note:** AWS 콘솔, CLI, 또는 `ignore_secret_changes = true` 없이 Rotation Lambda를 사용하는 경우, 시크릿 값이 Terraform 외부에서 변경되면 활성 버전이 Terraform state에서 추적하는 버전과 달라질 수 있습니다. 이 경우 처리 방법은 부록의 [외부에서 변경된 시크릿 값 동기화](#외부에서-변경된-시크릿-값-동기화)를 참고하세요.
 
 ## 변수
@@ -333,6 +365,14 @@ tfmodule-aws-secrets-manager에서 사용되는 입력/출력 변수를 설명�
 </thead>
 <tbody>
     <tr>
+        <td>create_secret_version</td>
+        <td>시크릿 버전(시크릿 값) 생성 여부를 결정합니다. <code>false</code>로 설정하면 시크릿만 생성하고 값은 Terraform 외부에서 설정합니다. <code>true</code>인 경우 <code>secret_string</code>, <code>secret_binary</code>, <code>secret_string_wo</code> 중 하나가 필수입니다.</td>
+        <td>bool</td>
+        <td>true</td>
+        <td>no</td>
+        <td>false</td>
+    </tr>
+    <tr>
         <td>ignore_secret_changes</td>
         <td><code>true</code>로 설정하면 초기 생성 이후 <code>secret_string</code> 또는 <code>secret_binary</code>에 대한 외부 변경을 Terraform이 무시합니다. 생성 이후 이 값을 변경하는 것은 파괴적인 작업입니다. 시크릿 값을 Terraform 외부에서 관리할 때 사용합니다.</td>
         <td>bool</td>
@@ -355,6 +395,22 @@ tfmodule-aws-secrets-manager에서 사용되는 입력/출력 변수를 설명�
         <td>null</td>
         <td>no</td>
         <td>"dGVzdA=="</td>
+    </tr>
+    <tr>
+        <td>secret_string_wo</td>
+        <td>암호화하여 저장할 write-only 평문 데이터입니다. 값은 AWS로 전달되지만 Terraform plan 및 state에는 저장되지 않습니다. Ephemeral·Sensitive 변수이며 Terraform <code>&gt;= 1.11</code>이 필요합니다. <code>secret_string</code>, <code>secret_binary</code>와 함께 사용할 수 없으며 <code>secret_string_wo_version</code>이 필수입니다.</td>
+        <td>string (ephemeral)</td>
+        <td>null</td>
+        <td>no</td>
+        <td>jsonencode({ password = var.db_password })</td>
+    </tr>
+    <tr>
+        <td>secret_string_wo_version</td>
+        <td><code>secret_string_wo</code>의 버전 번호입니다. Terraform은 write-only 값의 변경을 감지할 수 없으므로, 새 값을 AWS에 반영하려면 이 번호를 증가시켜야 합니다. <code>1</code> 이상이어야 하며 <code>secret_string_wo</code> 사용 시 필수입니다.</td>
+        <td>number</td>
+        <td>null</td>
+        <td>no</td>
+        <td>1</td>
     </tr>
     <tr>
         <td>version_stages</td>
@@ -479,6 +535,18 @@ Rate 표현식 교체:
         <td>"dGVzdA=="</td>
     </tr>
     <tr>
+        <td>secret_string_wo_version</td>
+        <td>Write-only 시크릿 문자열의 버전 번호입니다. Write-only 값 자체는 노출되지 않습니다.</td>
+        <td>number</td>
+        <td>1</td>
+    </tr>
+    <tr>
+        <td>has_secret_string_wo</td>
+        <td>시크릿 값이 write-only 인자 <code>secret_string_wo</code>로 저장되었는지 여부입니다.</td>
+        <td>bool</td>
+        <td>true</td>
+    </tr>
+    <tr>
         <td>secret_version_stages</td>
         <td>이 버전의 시크릿에 연결된 스테이징 레이블 목록입니다.</td>
         <td>list(string)</td>
@@ -519,6 +587,20 @@ Secrets Manager는 각 시크릿의 버전 히스토리를 관리합니다. 각 
 |---|---|---|
 | `ignore_secret_changes = false` (기본값) | **Terraform** | plan/apply 시 시크릿 값 업데이트 |
 | `ignore_secret_changes = true` | **외부 (콘솔, CLI, Lambda)** | 생성 이후 값 변경 무시 |
+
+### Write-only 시크릿 값 (`secret_string_wo`)
+
+`secret_string`으로 전달한 값은 Terraform plan 및 state 파일에 평문으로 저장됩니다(`sensitive`는 CLI 출력에서만 가려줍니다). 따라서 state 백엔드(예: S3 버킷)에 읽기 권한이 있는 사람은 누구나 시크릿 값을 확인할 수 있습니다. Write-only 인자 `secret_string_wo`를 사용하면 이 문제를 방지할 수 있습니다.
+
+| 인자 | plan/state 저장 여부 | 변경 감지 | 요구 사항 |
+|---|---|---|---|
+| `secret_string` | **저장됨** (평문) | 자동 | - |
+| `secret_string_wo` | **저장되지 않음** | `secret_string_wo_version`으로 수동 관리 | Terraform `>= 1.11` |
+
+- 값은 ephemeral 소스(예: `TF_VAR_*`로 전달하는 `ephemeral = true` 변수, `ephemeral "random_password"` 같은 ephemeral 리소스)로 전달하여 디스크에 기록되지 않도록 하세요.
+- Terraform이 값을 저장하지 않으므로 변경을 감지할 수 없습니다. 값을 변경할 때마다 `secret_string_wo_version`을 증가시키세요.
+- `ignore_secret_changes = true`인 경우, 생성 이후 `secret_string_wo_version` 변경도 무시됩니다.
+- 기존 시크릿을 `secret_string`에서 `secret_string_wo`로 전환하는 경우, 이 모듈은 AWS provider `>= 6.50.0`을 요구하므로 시크릿 버전을 재생성하지 않고 전환됩니다. 전환 후에도 이전 state 파일 버전(예: S3 버저닝)에는 기존 평문 값이 남아 있으므로 필요 시 정리하세요.
 
 ### 암호화
 

@@ -139,6 +139,38 @@ module "secret" {
 
 <br>
 
+### Example 6 : Write-only Secret (not stored in Terraform state)
+
+This chapter explains how to store a secret value using the write-only argument `secret_string_wo`. The value is sent to AWS Secrets Manager but is **never stored in the Terraform plan or state file**, so it cannot be exposed even if the state is read. Requires Terraform `>= 1.11`.
+
+```hcl
+# Ephemeral variable: the value is never written to plan or state.
+# Supply it via an environment variable, e.g. `export TF_VAR_db_password="..."`
+variable "db_password" {
+  type      = string
+  sensitive = true
+  ephemeral = true
+}
+
+module "secret" {
+  source  = "git::https://github.com/oniops/tfmodule-aws-secrets-manager.git?ref=v1.0.0"
+  context = module.ctx.context
+  name    = "my-db-password"
+
+  secret_string_wo = jsonencode({
+    username = "admin"
+    password = var.db_password
+  })
+  # Terraform cannot detect changes to write-only values.
+  # Increment this number whenever the secret value changes.
+  secret_string_wo_version = 1
+}
+```
+
+> **Note:** `secret_string_wo` cannot be used together with `secret_string` or `secret_binary`, and must always be set with `secret_string_wo_version`. To update the value, change the input and increment `secret_string_wo_version` (e.g. `1` → `2`). The `secret_string` output returns `null` for write-only secrets. See [Write-only Secret Values](#write-only-secret-values-secret_string_wo) in the Appendix for details.
+
+<br>
+
 > **Note:** If the secret value is changed outside Terraform (e.g., via AWS Console, CLI, or a rotation Lambda without `ignore_secret_changes = true`), the active secret version may no longer match the version tracked in Terraform state. For guidance on how to handle this, see [Syncing Externally Changed Secret Values](#syncing-externally-changed-secret-values) in the Appendix.
 
 ## Variables
@@ -333,6 +365,14 @@ This chapter describes Input/Output variables used in tfmodule-aws-secrets-manag
 </thead>
 <tbody>
     <tr>
+        <td>create_secret_version</td>
+        <td>Determines whether a secret version (secret value) will be created. Set to <code>false</code> to create only the secret and populate its value outside Terraform. When <code>true</code>, one of <code>secret_string</code>, <code>secret_binary</code> or <code>secret_string_wo</code> is required.</td>
+        <td>bool</td>
+        <td>true</td>
+        <td>no</td>
+        <td>false</td>
+    </tr>
+    <tr>
         <td>ignore_secret_changes</td>
         <td>When <code>true</code>, Terraform ignores external changes to <code>secret_string</code> or <code>secret_binary</code> after initial creation. Changing this value after creation is a destructive operation. Use when the secret value is managed outside Terraform.</td>
         <td>bool</td>
@@ -355,6 +395,22 @@ This chapter describes Input/Output variables used in tfmodule-aws-secrets-manag
         <td>null</td>
         <td>no</td>
         <td>"dGVzdA=="</td>
+    </tr>
+    <tr>
+        <td>secret_string_wo</td>
+        <td>Write-only plaintext data to encrypt and store. The value is sent to AWS but is never stored in the Terraform plan or state. Ephemeral and sensitive. Requires Terraform <code>&gt;= 1.11</code>. Cannot be used with <code>secret_string</code> or <code>secret_binary</code>, and requires <code>secret_string_wo_version</code>.</td>
+        <td>string (ephemeral)</td>
+        <td>null</td>
+        <td>no</td>
+        <td>jsonencode({ password = var.db_password })</td>
+    </tr>
+    <tr>
+        <td>secret_string_wo_version</td>
+        <td>Version number of <code>secret_string_wo</code>. Terraform cannot detect changes to write-only values, so increment this number to push a new value to AWS. Must be <code>&gt;= 1</code>. Required when <code>secret_string_wo</code> is set.</td>
+        <td>number</td>
+        <td>null</td>
+        <td>no</td>
+        <td>1</td>
     </tr>
     <tr>
         <td>version_stages</td>
@@ -478,6 +534,18 @@ or
         <td>"dGVzdA=="</td>
     </tr>
     <tr>
+        <td>secret_string_wo_version</td>
+        <td>The version number of the write-only secret string. The write-only value itself is never exposed.</td>
+        <td>number</td>
+        <td>1</td>
+    </tr>
+    <tr>
+        <td>has_secret_string_wo</td>
+        <td>Whether the secret value was stored using the write-only <code>secret_string_wo</code> argument.</td>
+        <td>bool</td>
+        <td>true</td>
+    </tr>
+    <tr>
         <td>secret_version_stages</td>
         <td>The list of staging labels attached to this version of the secret.</td>
         <td>list(string)</td>
@@ -518,6 +586,20 @@ By default, Terraform manages the secret value and will overwrite external chang
 |---|---|---|
 | `ignore_secret_changes = false` (default) | **Terraform** | Updates secret value on plan/apply |
 | `ignore_secret_changes = true` | **External (Console, CLI, Lambda)** | Ignores value changes after creation |
+
+### Write-only Secret Values (`secret_string_wo`)
+
+A value passed via `secret_string` is stored in plaintext in the Terraform plan and state file (it is only masked in CLI output as `sensitive`). Anyone with read access to the state backend (e.g. the S3 bucket) can read the secret. Using the write-only argument `secret_string_wo` avoids this.
+
+| Argument | Stored in plan/state | Change detection | Requirement |
+|---|---|---|---|
+| `secret_string` | **Yes** (plaintext) | Automatic | - |
+| `secret_string_wo` | **No** | Manual, via `secret_string_wo_version` | Terraform `>= 1.11` |
+
+- Pass the value from an ephemeral source (e.g. an `ephemeral = true` variable set by `TF_VAR_*`, or an ephemeral resource such as `ephemeral "random_password"`) so it is never written to disk.
+- Because Terraform does not store the value, it cannot detect changes. Increment `secret_string_wo_version` whenever the value changes.
+- When `ignore_secret_changes = true`, changes to `secret_string_wo_version` are also ignored after creation.
+- To migrate an existing secret from `secret_string` to `secret_string_wo`, this module requires AWS provider `>= 6.50.0`, so the switch is performed without re-creating the secret version. After migration, the previous plaintext value remains in older state file versions (e.g. S3 versioning), so clean them up if necessary.
 
 ### Encryption
 

@@ -43,6 +43,16 @@ output "secret_binary" {
   value       = try(aws_secretsmanager_secret_version.this[0].secret_binary, aws_secretsmanager_secret_version.ignoreChanges[0].secret_binary, null)
 }
 
+output "secret_string_wo_version" {
+  description = "The version number of the write-only secret string (`secret_string_wo`). The write-only value itself is never exposed"
+  value       = try(aws_secretsmanager_secret_version.this[0].secret_string_wo_version, aws_secretsmanager_secret_version.ignoreChanges[0].secret_string_wo_version, null)
+}
+
+output "has_secret_string_wo" {
+  description = "Whether the secret value was stored using the write-only `secret_string_wo` argument"
+  value       = try(aws_secretsmanager_secret_version.this[0].has_secret_string_wo, aws_secretsmanager_secret_version.ignoreChanges[0].has_secret_string_wo, null)
+}
+
 output "secret_version_stages" {
   description = "The list of staging labels attached to this version of the secret"
   value       = try(aws_secretsmanager_secret_version.this[0].version_stages, aws_secretsmanager_secret_version.ignoreChanges[0].version_stages, null)

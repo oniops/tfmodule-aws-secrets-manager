@@ -44,6 +44,11 @@ variable "recovery_window_in_days" {
   description = "Number of days that AWS Secrets Manager waits before it can delete the secret. This value can be `0` to force deletion without recovery or range from `7` to `30` days. The default value is `30`"
   type        = number
   default     = null
+
+  validation {
+    condition     = var.recovery_window_in_days == null || try(var.recovery_window_in_days == 0 || (var.recovery_window_in_days >= 7 && var.recovery_window_in_days <= 30), false)
+    error_message = "recovery_window_in_days must be 0 (force deletion) or between 7 and 30."
+  }
 }
 
 variable "force_overwrite_replica_secret" {
@@ -65,6 +70,11 @@ variable "create_policy" {
   description = "Determines whether a resource policy will be created for the secret"
   type        = bool
   default     = false
+
+  validation {
+    condition     = !var.create_policy || length(var.policy) > 0
+    error_message = "policy must contain at least one statement when create_policy is true."
+  }
 }
 
 variable "block_public_policy" {
@@ -92,6 +102,12 @@ Example)
 EOF
 }
 
+variable "create_secret_version" {
+  description = "Determines whether a secret version (secret value) will be created. Set to `false` to create only the secret and populate its value outside Terraform (e.g. Console, CLI, rotation Lambda)"
+  type        = bool
+  default     = true
+}
+
 variable "ignore_secret_changes" {
   description = "Determines whether or not Terraform will ignore changes made externally to `secret_string` or `secret_binary`. Changing this value after creation is a destructive operation"
   type        = bool
@@ -102,12 +118,47 @@ variable "secret_binary" {
   description = "Specifies binary data that you want to encrypt and store in this version of the secret. This is required if `secret_string` is not set. Needs to be encoded to base64"
   type        = string
   default     = null
+  sensitive   = true
 }
 
 variable "secret_string" {
   description = "Specifies text data that you want to encrypt and store in this version of the secret. This is required if `secret_binary` is not set"
   type        = string
   default     = null
+  sensitive   = true
+}
+
+variable "secret_string_wo" {
+  description = <<EOF
+Write-only text data to encrypt and store in this version of the secret. The value is sent to AWS but is never stored in the Terraform plan or state file.
+Requires Terraform >= 1.11. Cannot be used together with `secret_string` or `secret_binary`, and requires `secret_string_wo_version`.
+This variable is ephemeral, so supply the value from an ephemeral source (e.g. `TF_VAR_secret_string_wo`, an ephemeral variable, or an ephemeral resource) to keep it off disk.
+EOF
+  type        = string
+  default     = null
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "secret_string_wo_version" {
+  description = "Version number of `secret_string_wo`. Terraform cannot detect changes to write-only values, so increment this number whenever `secret_string_wo` changes to push the new value to AWS. Required when `secret_string_wo` is set"
+  type        = number
+  default     = null
+
+  validation {
+    condition     = var.secret_string_wo_version == null || try(var.secret_string_wo_version >= 1, false)
+    error_message = "secret_string_wo_version must be a number greater than or equal to 1."
+  }
+
+  validation {
+    condition     = (var.secret_string_wo == null) == (var.secret_string_wo_version == null)
+    error_message = "secret_string_wo and secret_string_wo_version must be set together."
+  }
+
+  validation {
+    condition     = var.secret_string_wo_version == null || (var.secret_string == null && var.secret_binary == null)
+    error_message = "secret_string_wo (secret_string_wo_version) cannot be used together with secret_string or secret_binary."
+  }
 }
 
 variable "version_stages" {
